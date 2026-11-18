@@ -1,0 +1,397 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Google-authenticated user account and personal contact info",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID" },
+        "displayName": { "type": "string", "description": "User full display name" },
+        "email": { "type": "string", "format": "email", "description": "Google account email" },
+        "phone": { "type": "string", "description": "Citizen or officer mobile number" },
+        "lastPortalRole": { "type": "string", "enum": ["CUSTOMER", "STAFF", "ADMIN"], "description": "Last active portal role" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": ["userId", "displayName", "email", "lastPortalRole", "createdAt", "updatedAt"]
+    },
+    "AdminMember": {
+      "title": "AdminMember",
+      "description": "Authorized system administrator registry entry",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["ADMIN"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "email", "role", "createdAt", "updatedAt"]
+    },
+    "StaffAccess": {
+      "title": "StaffAccess",
+      "description": "Verified Staff UID binding to an active staff profile and locked counter",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "staffProfileId": { "type": "string" },
+        "assignedCentreId": { "type": "string" },
+        "assignedCounterId": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "email", "staffProfileId", "assignedCentreId", "assignedCounterId", "active", "createdAt", "updatedAt"]
+    },
+    "StaffProfile": {
+      "title": "StaffProfile",
+      "description": "Admin-managed staff officer directory record",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "assignedCentreId": { "type": "string" },
+        "assignedCounterId": { "type": "string" },
+        "department": { "type": "string" },
+        "pin": { "type": "string" },
+        "active": { "type": "boolean" },
+        "createdByUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "email", "phone", "assignedCentreId", "assignedCounterId", "department", "pin", "active", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "ServiceItem": {
+      "title": "ServiceItem",
+      "description": "Public citizen service catalog item with fees and document checklist",
+      "type": "object",
+      "properties": {
+        "category": { "type": "string", "enum": ["CIVIL_ID", "HEALTHCARE", "TRANSPORT_RTO", "BANKING_FINANCE", "MUNICIPAL_CIVIC", "EDUCATION"] },
+        "title": { "type": "string" },
+        "code": { "type": "string" },
+        "description": { "type": "string" },
+        "officialFee": { "type": "string" },
+        "avgProcessingDurationMin": { "type": "integer" },
+        "eligibility": { "type": "string" },
+        "proceduralSteps": { "type": "array" },
+        "requiredDocuments": { "type": "array" },
+        "available": { "type": "boolean" },
+        "cautionNote": { "type": "string" },
+        "visibility": { "type": "string", "enum": ["PUBLIC"] },
+        "updatedByUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["category", "title", "code", "description", "officialFee", "avgProcessingDurationMin", "eligibility", "proceduralSteps", "requiredDocuments", "available", "cautionNote", "visibility", "updatedByUid", "createdAt", "updatedAt"]
+    },
+    "ServiceCentre": {
+      "title": "ServiceCentre",
+      "description": "Public service centre facility with live wait time and crowd status",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "category": { "type": "string", "enum": ["CIVIL_ID", "HEALTHCARE", "TRANSPORT_RTO", "BANKING_FINANCE", "MUNICIPAL_CIVIC", "EDUCATION"] },
+        "address": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "distanceKm": { "type": "number" },
+        "operatingHours": { "type": "string" },
+        "phone": { "type": "string" },
+        "activeCountersCount": { "type": "integer" },
+        "totalCountersCount": { "type": "integer" },
+        "currentCrowdLevel": { "type": "string", "enum": ["LOW", "MODERATE", "HIGH", "SEVERE"] },
+        "estimatedWaitMin": { "type": "integer" },
+        "estimatedWaitMax": { "type": "integer" },
+        "lastCrowdUpdateMinutesAgo": { "type": "integer" },
+        "crowdConfidencePercent": { "type": "integer" },
+        "bestTimeToVisit": { "type": "string" },
+        "virtualQueueOpen": { "type": "boolean" },
+        "availableServiceIds": { "type": "array" },
+        "rating": { "type": "number" },
+        "totalReviewsCount": { "type": "integer" },
+        "liveNotice": { "type": "string" },
+        "visibility": { "type": "string", "enum": ["PUBLIC"] },
+        "updatedByUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "category", "address", "latitude", "longitude", "distanceKm", "operatingHours", "phone", "activeCountersCount", "totalCountersCount", "currentCrowdLevel", "estimatedWaitMin", "estimatedWaitMax", "lastCrowdUpdateMinutesAgo", "crowdConfidencePercent", "bestTimeToVisit", "virtualQueueOpen", "availableServiceIds", "rating", "totalReviewsCount", "visibility", "updatedByUid", "createdAt", "updatedAt"]
+    },
+    "Counter": {
+      "title": "Counter",
+      "description": "Physical service counter within a service centre",
+      "type": "object",
+      "properties": {
+        "centreId": { "type": "string" },
+        "counterNumber": { "type": "integer" },
+        "name": { "type": "string" },
+        "assignedStaffName": { "type": "string" },
+        "active": { "type": "boolean" },
+        "currentServingToken": { "type": "string" },
+        "handledServiceIds": { "type": "array" },
+        "visibility": { "type": "string", "enum": ["PUBLIC"] },
+        "updatedByUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["centreId", "counterNumber", "name", "assignedStaffName", "active", "handledServiceIds", "visibility", "updatedByUid", "createdAt", "updatedAt"]
+    },
+    "QueueToken": {
+      "title": "QueueToken",
+      "description": "Citizen virtual or walk-in queue token",
+      "type": "object",
+      "properties": {
+        "tokenNumber": { "type": "string" },
+        "centreId": { "type": "string" },
+        "centreName": { "type": "string" },
+        "serviceId": { "type": "string" },
+        "serviceName": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhone": { "type": "string" },
+        "status": { "type": "string", "enum": ["WAITING", "CALLED", "SERVING", "COMPLETED", "CANCELLED", "NO_SHOW"] },
+        "counterNumber": { "type": "integer" },
+        "counterName": { "type": "string" },
+        "positionInQueue": { "type": "integer" },
+        "peopleAhead": { "type": "integer" },
+        "estimatedWaitMin": { "type": "integer" },
+        "estimatedWaitMax": { "type": "integer" },
+        "joinedAtTimestamp": { "type": "integer" },
+        "calledAtTimestamp": { "type": "integer" },
+        "servingAtTimestamp": { "type": "integer" },
+        "completedAtTimestamp": { "type": "integer" },
+        "qrVerificationCode": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["tokenNumber", "centreId", "centreName", "serviceId", "serviceName", "userId", "userName", "userPhone", "status", "positionInQueue", "peopleAhead", "estimatedWaitMin", "estimatedWaitMax", "joinedAtTimestamp", "qrVerificationCode", "createdAt", "updatedAt"]
+    },
+    "ServiceChangeProposal": {
+      "title": "ServiceChangeProposal",
+      "description": "Staff-submitted service or document proposal held for Admin review",
+      "type": "object",
+      "properties": {
+        "proposalType": { "type": "string", "enum": ["SERVICE_INFO", "REQUIRED_DOCUMENT_ADD", "REQUIRED_DOCUMENT_UPDATE", "REQUIRED_DOCUMENT_REMOVE"] },
+        "serviceId": { "type": "string" },
+        "serviceTitle": { "type": "string" },
+        "centreId": { "type": "string" },
+        "submittedByStaffId": { "type": "string" },
+        "submittedByUid": { "type": "string" },
+        "submittedByStaffName": { "type": "string" },
+        "assignedCounterNumber": { "type": "integer" },
+        "rationale": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "submittedAt": { "type": "integer" },
+        "reviewedAt": { "type": "integer" },
+        "reviewedByAdminName": { "type": "string" },
+        "adminReviewNote": { "type": "string" },
+        "previousFee": { "type": "string" },
+        "proposedFee": { "type": "string" },
+        "previousDurationMin": { "type": "integer" },
+        "proposedDurationMin": { "type": "integer" },
+        "previousDescription": { "type": "string" },
+        "proposedDescription": { "type": "string" },
+        "previousEligibility": { "type": "string" },
+        "proposedEligibility": { "type": "string" },
+        "previousCautionNote": { "type": "string" },
+        "proposedCautionNote": { "type": "string" },
+        "documentId": { "type": "string" },
+        "previousDocName": { "type": "string" },
+        "proposedDocName": { "type": "string" },
+        "previousDocDescription": { "type": "string" },
+        "proposedDocDescription": { "type": "string" },
+        "previousDocMandatory": { "type": "boolean" },
+        "proposedDocMandatory": { "type": "boolean" },
+        "previousDocAlternatives": { "type": "array" },
+        "proposedDocAlternatives": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["proposalType", "serviceId", "serviceTitle", "centreId", "submittedByStaffId", "submittedByUid", "submittedByStaffName", "assignedCounterNumber", "rationale", "status", "submittedAt", "adminReviewNote", "previousFee", "proposedFee", "previousDurationMin", "proposedDurationMin", "previousDescription", "proposedDescription", "previousEligibility", "proposedEligibility", "previousCautionNote", "proposedCautionNote", "documentId", "previousDocName", "proposedDocName", "previousDocDescription", "proposedDocDescription", "previousDocMandatory", "proposedDocMandatory", "previousDocAlternatives", "proposedDocAlternatives", "createdAt", "updatedAt"]
+    },
+    "StaffNotification": {
+      "title": "StaffNotification",
+      "description": "Operational alert for Staff desk or Admin console",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "targetRole": { "type": "string", "enum": ["CUSTOMER", "STAFF", "ADMIN"] },
+        "centreId": { "type": "string" },
+        "counterId": { "type": "string" },
+        "severity": { "type": "string", "enum": ["INFO", "ACTION_REQUIRED", "APPROVED", "ALERT"] },
+        "read": { "type": "boolean" },
+        "timestamp": { "type": "integer" },
+        "relatedTokenNumber": { "type": "string" },
+        "recipientUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "message", "targetRole", "severity", "read", "timestamp", "recipientUid", "createdAt", "updatedAt"]
+    },
+    "SystemSettings": {
+      "title": "SystemSettings",
+      "description": "Global queue thresholds and maintenance configuration",
+      "type": "object",
+      "properties": {
+        "autoNoShowTimeoutMinutes": { "type": "integer" },
+        "maxActiveTokensPerCitizen": { "type": "integer" },
+        "crowdDecayHalfLifeMinutes": { "type": "integer" },
+        "walkInBufferPerHour": { "type": "integer" },
+        "maintenanceMode": { "type": "boolean" },
+        "maintenanceBanner": { "type": "string" },
+        "updatedAtMillis": { "type": "integer" },
+        "updatedByAdmin": { "type": "string" },
+        "visibility": { "type": "string", "enum": ["PUBLIC"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["autoNoShowTimeoutMinutes", "maxActiveTokensPerCitizen", "crowdDecayHalfLifeMinutes", "walkInBufferPerHour", "maintenanceMode", "maintenanceBanner", "updatedAtMillis", "updatedByAdmin", "visibility", "createdAt", "updatedAt"]
+    },
+    "CrowdReport": {
+      "title": "CrowdReport",
+      "description": "Citizen-submitted and staff-verified live crowd telemetry",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "centreId": { "type": "string" },
+        "centreName": { "type": "string" },
+        "crowdLevel": { "type": "string", "enum": ["LOW", "MODERATE", "HIGH", "SEVERE"] },
+        "approxPeopleCount": { "type": "integer" },
+        "reportedWaitMinutes": { "type": "integer" },
+        "notes": { "type": "string" },
+        "reporterName": { "type": "string" },
+        "timestamp": { "type": "integer" },
+        "upvotesCount": { "type": "integer" },
+        "staffVerified": { "type": "boolean" },
+        "confidenceScore": { "type": "integer" },
+        "visibility": { "type": "string", "enum": ["PUBLIC"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "centreId", "centreName", "crowdLevel", "approxPeopleCount", "reportedWaitMinutes", "notes", "reporterName", "timestamp", "upvotesCount", "staffVerified", "confidenceScore", "visibility", "createdAt", "updatedAt"]
+    },
+    "CentreReview": {
+      "title": "CentreReview",
+      "description": "Verified visitor feedback and service speed review",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "centreId": { "type": "string" },
+        "centreName": { "type": "string" },
+        "userName": { "type": "string" },
+        "rating": { "type": "integer" },
+        "reviewText": { "type": "string" },
+        "visitTag": { "type": "string" },
+        "queueSpeedRating": { "type": "string" },
+        "timestamp": { "type": "integer" },
+        "helpfulCount": { "type": "integer" },
+        "verifiedVisitor": { "type": "boolean" },
+        "visibility": { "type": "string", "enum": ["PUBLIC"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "centreId", "centreName", "userName", "rating", "reviewText", "visitTag", "queueSpeedRating", "timestamp", "helpfulCount", "verifiedVisitor", "visibility", "createdAt", "updatedAt"]
+    },
+    "LiveQueueStatusUpdate": {
+      "title": "LiveQueueStatusUpdate",
+      "description": "Live radar status update from citizens or desk staff",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "centreId": { "type": "string" },
+        "centreName": { "type": "string" },
+        "reporterName": { "type": "string" },
+        "updateTag": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "integer" },
+        "currentServingEstimate": { "type": "string" },
+        "upvotes": { "type": "integer" },
+        "visibility": { "type": "string", "enum": ["PUBLIC"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "centreId", "centreName", "reporterName", "updateTag", "message", "timestamp", "currentServingEstimate", "upvotes", "visibility", "createdAt", "updatedAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Append-only operational audit trail",
+      "type": "object",
+      "properties": {
+        "timestamp": { "type": "integer" },
+        "action": { "type": "string" },
+        "actorName": { "type": "string" },
+        "actorRole": { "type": "string", "enum": ["CUSTOMER", "STAFF", "ADMIN"] },
+        "actorUid": { "type": "string" },
+        "details": { "type": "string" },
+        "centreId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["timestamp", "action", "actorName", "actorRole", "actorUid", "details", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Owner-isolated user profile document"
+    },
+    "/admins/{uid}": {
+      "schema": { "$ref": "#/entities/AdminMember" },
+      "description": "Authorized admin UID registry"
+    },
+    "/staff_access/{uid}": {
+      "schema": { "$ref": "#/entities/StaffAccess" },
+      "description": "Verified Staff UID binding to assigned centre and counter"
+    },
+    "/staff_profiles/{staffId}": {
+      "schema": { "$ref": "#/entities/StaffProfile" },
+      "description": "Admin-managed staff officer accounts"
+    },
+    "/services/{serviceId}": {
+      "schema": { "$ref": "#/entities/ServiceItem" },
+      "description": "Public citizen service catalog"
+    },
+    "/centres/{centreId}": {
+      "schema": { "$ref": "#/entities/ServiceCentre" },
+      "description": "Public service centres directory"
+    },
+    "/counters/{counterId}": {
+      "schema": { "$ref": "#/entities/Counter" },
+      "description": "Physical counter operational status"
+    },
+    "/tokens/{tokenId}": {
+      "schema": { "$ref": "#/entities/QueueToken" },
+      "description": "Citizen virtual and walk-in queue tokens"
+    },
+    "/service_change_proposals/{proposalId}": {
+      "schema": { "$ref": "#/entities/ServiceChangeProposal" },
+      "description": "Staff proposals awaiting Admin review"
+    },
+    "/notifications/{notifId}": {
+      "schema": { "$ref": "#/entities/StaffNotification" },
+      "description": "Role-targeted queue and approval alerts"
+    },
+    "/system_settings/{settingId}": {
+      "schema": { "$ref": "#/entities/SystemSettings" },
+      "description": "Global operational queue settings"
+    },
+    "/crowd_reports/{reportId}": {
+      "schema": { "$ref": "#/entities/CrowdReport" },
+      "description": "Citizen crowd reports and staff verifications"
+    },
+    "/reviews/{reviewId}": {
+      "schema": { "$ref": "#/entities/CentreReview" },
+      "description": "Visitor reviews for service centres"
+    },
+    "/live_queue_updates/{updateId}": {
+      "schema": { "$ref": "#/entities/LiveQueueStatusUpdate" },
+      "description": "Crowdsourced live radar broadcasts"
+    },
+    "/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Immutable operational audit logs"
+    }
+  }
+}

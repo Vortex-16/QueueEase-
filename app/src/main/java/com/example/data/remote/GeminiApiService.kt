@@ -77,7 +77,8 @@ object GeminiApiClient {
 
     suspend fun callGeminiGrounded(
         userQuery: String,
-        groundedContext: String
+        groundedContext: String,
+        role: com.example.data.model.UserRole = com.example.data.model.UserRole.CUSTOMER
     ): Result<String> = withContext(Dispatchers.IO) {
         val apiKey = try {
             BuildConfig.GEMINI_API_KEY
@@ -89,15 +90,29 @@ object GeminiApiClient {
             return@withContext Result.failure(IllegalStateException("API key not configured"))
         }
 
+        val roleInstruction = when (role) {
+            com.example.data.model.UserRole.CUSTOMER -> """
+                You are QEase Service Intelligence Assistant for public citizens.
+                Help citizens understand required documents, official fees, eligibility, wait times, and counter steps.
+            """.trimIndent()
+            com.example.data.model.UserRole.STAFF -> """
+                You are QEase Counter Desk AI Copilot for a counter staff officer.
+                Help the officer draft compliant service or required-document change proposals for Admin review, verify queue/crowd pressure at their locked counter, and look up counter SOP rules.
+                Keep suggestions actionable so the officer can submit a clean proposal or verify field crowd reports immediately.
+            """.trimIndent()
+            com.example.data.model.UserRole.ADMIN -> """
+                You are QEase Governance & Audit AI Assistant for a system administrator.
+                Audit pending Staff proposals for policy/risk consistency, identify bottleneck centres or high queue wait loads from live metrics, and recommend governance actions (approvals, counter staffing, live notices, or maintenance controls).
+            """.trimIndent()
+        }
+
         try {
             val systemPrompt = """
-                You are QEase Service Intelligence Assistant.
-                You help citizens understand required documents, fees, eligibility, and visiting instructions for public and private service centres.
+                $roleInstruction
                 CRITICAL RULES:
-                1. Answer ONLY based on the verified grounded context provided below.
-                2. If the answer is not in the context, explicitly say: "Official verified details are not available in the QEase knowledge base for this specific request. Please verify directly with the service centre."
-                3. Never invent fees, rules, or document requirements.
-                4. Keep answers concise, clear, and actionable with bullet points.
+                1. Answer ONLY based on the verified grounded context and live operational snapshot provided below.
+                2. If the exact fact is missing from the context, state clearly what is verified and note any gap instead of inventing rules or fees.
+                3. Format output cleanly using short section labels (e.g. "Summary:", "Recommended Action:", "Required Documents:", "Audit Findings:") and "- " hyphen bullets. Never output raw markdown asterisks (* or **).
                 
                 GROUNDED VERIFIED CONTEXT:
                 $groundedContext

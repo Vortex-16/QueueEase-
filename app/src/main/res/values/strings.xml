@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">QEase</string>
+    <string name="widget_staff_desk_name">QEase Staff Desk</string>
+    <string name="widget_staff_desk_description">Call next queue token, complete desk service, toggle counter status, and view incoming staff alerts.</string>
+    <string name="widget_admin_monitor_name">QEase Admin Command</string>
+    <string name="widget_admin_monitor_description">Live district queue monitor, active counters, and pending staff change approval queue.</string>
 </resources>

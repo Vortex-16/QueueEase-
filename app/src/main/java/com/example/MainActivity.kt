@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FactCheck
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -27,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -34,7 +36,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.credentials.CredentialManager
 import com.example.data.model.UserRole
+import com.example.data.remote.attemptAutoSignIn
+import com.example.data.remote.authStateFlow
+import com.example.data.remote.safeFirebaseAuthOrNull
+import com.example.data.remote.signOutGoogle
 import com.example.ui.components.AuthRbacDialog
 import com.example.ui.components.ResponsiveDialogShell
 import com.example.ui.components.rememberQEaseLayoutMetrics
@@ -43,12 +50,16 @@ import com.example.ui.theme.*
 import com.example.ui.viewmodel.MainNavTab
 import com.example.ui.viewmodel.QEaseViewModel
 
+import android.content.Intent
+import com.example.widget.WidgetStateBridge
+
 class MainActivity : ComponentActivity() {
 
     private val viewModel: QEaseViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleIncomingWidgetIntent(intent)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.light(
                 android.graphics.Color.TRANSPARENT,
@@ -63,6 +74,19 @@ class MainActivity : ComponentActivity() {
             MyApplicationTheme {
                 QEaseMainApp(viewModel)
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingWidgetIntent(intent)
+    }
+
+    private fun handleIncomingWidgetIntent(intent: Intent?) {
+        val destination = intent?.getStringExtra(WidgetStateBridge.EXTRA_WIDGET_DESTINATION)
+        if (!destination.isNullOrBlank()) {
+            viewModel.handleWidgetDeepLink(destination)
         }
     }
 }
@@ -83,12 +107,37 @@ fun QEaseMainApp(viewModel: QEaseViewModel) {
     val isAuthenticated by viewModel.isAuthenticated.collectAsState()
     val feedbackMessage by viewModel.userFeedbackMessage.collectAsState()
     val activeToken by viewModel.activeUserToken.collectAsState()
+    val notifications by viewModel.notifications.collectAsState()
+    val proposals by viewModel.proposals.collectAsState()
+    val selectedStaffCentreId by viewModel.selectedStaffCentreId.collectAsState()
     val showWelcome by viewModel.showWelcomeScreen.collectAsState()
     val showAuthDialog by viewModel.showAuthDialog.collectAsState()
     val showLogoutConfirm by viewModel.showLogoutConfirm.collectAsState()
     val authTargetRole by viewModel.authTargetRole.collectAsState()
 
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val credentialManager = remember(context) { CredentialManager.create(context) }
+    val firebaseAuth = remember(context) { safeFirebaseAuthOrNull(context) }
+    val firebaseUser by remember(firebaseAuth) { firebaseAuth.authStateFlow() }
+        .collectAsState(initial = firebaseAuth?.currentUser)
+    var googleAuthError by remember { mutableStateOf<String?>(null) }
+
     val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(Unit) {
+        attemptAutoSignIn(
+            context = context,
+            credentialManager = credentialManager,
+            onAuthSuccess = { googleAuthError = null },
+            onUnauthenticated = {},
+            scope = coroutineScope
+        )
+    }
+
+    LaunchedEffect(firebaseUser) {
+        viewModel.onFirebaseAuthChanged(firebaseUser)
+    }
 
     LaunchedEffect(feedbackMessage) {
         feedbackMessage?.let { msg ->
@@ -97,15 +146,56 @@ fun QEaseMainApp(viewModel: QEaseViewModel) {
         }
     }
 
-    if (!isAuthenticated || showWelcome) {
-        WelcomeScreen(
-            onStartCitizenLogin = { viewModel.openAuthDialog(UserRole.CUSTOMER) },
-            onSelectRoleLogin = { targetRole ->
-                viewModel.openAuthDialog(targetRole)
+    val performFullGoogleSignOut = {
+        viewModel.prepareGoogleSignOut()
+        signOutGoogle(
+            context = context,
+            credentialManager = credentialManager,
+            scope = coroutineScope,
+            onSignOutComplete = {
+                googleAuthError = null
+                viewModel.showFeedbackMessage("Signed out of Google Account.")
             }
         )
-    } else {
-        val navDestinations = remember(currentRole, activeToken) {
+    }
+
+    key(firebaseUser?.uid ?: "local") {
+        if (!isAuthenticated || showWelcome) {
+            WelcomeScreen(
+                onStartCitizenLogin = { viewModel.openAuthDialog(UserRole.CUSTOMER) },
+                onSelectRoleLogin = { targetRole ->
+                    viewModel.openAuthDialog(targetRole)
+                },
+                firebaseUser = firebaseUser,
+                googleAuthError = googleAuthError,
+                onGoogleAuthSuccess = {
+                    googleAuthError = null
+                    viewModel.showFeedbackMessage("Google Cloud Sync connected!")
+                },
+                onGoogleAuthError = { msg ->
+                    googleAuthError = msg
+                },
+                onSignOutGoogle = performFullGoogleSignOut
+            )
+        } else {
+        val staffScopedCentreId = currentUser.assignedCentreId?.takeIf { it.isNotBlank() } ?: selectedStaffCentreId
+        val unreadStaffAlertsCount = remember(notifications, staffScopedCentreId) {
+            notifications.count {
+                it.targetRole == UserRole.STAFF &&
+                    !it.isRead &&
+                    (it.centreId == null || it.centreId == staffScopedCentreId)
+            }
+        }
+        val pendingAdminApprovalsCount = remember(proposals) {
+            proposals.count { it.status == com.example.data.model.ProposalStatus.PENDING }
+        }
+
+        val navDestinations = remember(
+            currentRole,
+            activeToken,
+            unreadStaffAlertsCount,
+            pendingAdminApprovalsCount
+        ) {
             when (currentRole) {
                 UserRole.CUSTOMER -> listOf(
                     NavDestinationItem(MainNavTab.EXPLORE, Icons.Default.Home, "Home"),
@@ -117,17 +207,16 @@ fun QEaseMainApp(viewModel: QEaseViewModel) {
                 )
                 UserRole.STAFF -> listOf(
                     NavDestinationItem(MainNavTab.STAFF_DESK, Icons.Default.DesktopWindows, "Desk"),
-                    NavDestinationItem(MainNavTab.LIVE_TRACKER, Icons.Default.GpsFixed, "Live Radar"),
-                    NavDestinationItem(MainNavTab.CENTRES, Icons.Default.LocationOn, "Centres"),
-                    NavDestinationItem(MainNavTab.REVIEWS_FEEDBACK, Icons.Default.RateReview, "Reviews"),
-                    NavDestinationItem(MainNavTab.AI_ASSISTANT, Icons.Default.AutoAwesome, "AI Help")
+                    NavDestinationItem(MainNavTab.STAFF_PROPOSALS, Icons.Default.EditNote, "Proposals"),
+                    NavDestinationItem(MainNavTab.STAFF_ALERTS, Icons.Default.NotificationsActive, "Alerts", unreadStaffAlertsCount > 0),
+                    NavDestinationItem(MainNavTab.AI_ASSISTANT, Icons.Default.AutoAwesome, "AI Copilot")
                 )
                 UserRole.ADMIN -> listOf(
-                    NavDestinationItem(MainNavTab.ADMIN_PANEL, Icons.Default.AdminPanelSettings, "Admin"),
-                    NavDestinationItem(MainNavTab.SERVICES, Icons.Default.Description, "Services"),
-                    NavDestinationItem(MainNavTab.CENTRES, Icons.Default.LocationOn, "Centres"),
-                    NavDestinationItem(MainNavTab.REVIEWS_FEEDBACK, Icons.Default.RateReview, "Feedback"),
-                    NavDestinationItem(MainNavTab.LIVE_TRACKER, Icons.Default.GpsFixed, "Live Radar")
+                    NavDestinationItem(MainNavTab.ADMIN_MONITOR, Icons.Default.MonitorHeart, "Monitor"),
+                    NavDestinationItem(MainNavTab.ADMIN_APPROVALS, Icons.AutoMirrored.Filled.FactCheck, "Approvals", pendingAdminApprovalsCount > 0),
+                    NavDestinationItem(MainNavTab.ADMIN_OPS, Icons.Default.Tune, "Ops"),
+                    NavDestinationItem(MainNavTab.ADMIN_ANALYTICS, Icons.Default.Analytics, "Analytics"),
+                    NavDestinationItem(MainNavTab.AI_ASSISTANT, Icons.Default.AutoAwesome, "AI")
                 )
             }
         }
@@ -319,7 +408,12 @@ fun QEaseMainApp(viewModel: QEaseViewModel) {
                             MainNavTab.REVIEWS_FEEDBACK -> ReviewsFeedbackScreen(viewModel)
                             MainNavTab.AI_ASSISTANT -> AiAssistantScreen(viewModel)
                             MainNavTab.STAFF_DESK -> StaffDeskScreen(viewModel)
-                            MainNavTab.ADMIN_PANEL -> AdminPanelScreen(viewModel)
+                            MainNavTab.STAFF_PROPOSALS -> StaffProposalsScreen(viewModel)
+                            MainNavTab.STAFF_ALERTS -> StaffAlertsScreen(viewModel)
+                            MainNavTab.ADMIN_MONITOR -> AdminMonitorScreen(viewModel)
+                            MainNavTab.ADMIN_APPROVALS -> AdminApprovalsScreen(viewModel)
+                            MainNavTab.ADMIN_OPS -> AdminOpsScreen(viewModel)
+                            MainNavTab.ADMIN_ANALYTICS -> AdminAnalyticsScreen(viewModel)
                             MainNavTab.SAVED_CENTRES -> CentresScreen(viewModel)
                         }
                     }
@@ -327,6 +421,7 @@ fun QEaseMainApp(viewModel: QEaseViewModel) {
             }
         }
     }
+    } // end key(firebaseUser?.uid ?: "local")
 
     // Role-locked Login Modal (only reachable from Welcome/Login screen)
     if (showAuthDialog && !isAuthenticated) {
@@ -346,8 +441,10 @@ fun QEaseMainApp(viewModel: QEaseViewModel) {
         LogoutConfirmationDialog(
             userName = currentUser.name,
             role = currentRole,
+            googleEmail = firebaseUser?.email,
             onDismiss = { viewModel.dismissLogoutConfirmation() },
-            onConfirmLogout = { viewModel.confirmLogout() }
+            onConfirmLogout = { viewModel.confirmLogout() },
+            onSignOutGoogle = performFullGoogleSignOut
         )
     }
 }
@@ -357,8 +454,10 @@ fun QEaseMainApp(viewModel: QEaseViewModel) {
 private fun LogoutConfirmationDialog(
     userName: String,
     role: UserRole,
+    googleEmail: String? = null,
     onDismiss: () -> Unit,
-    onConfirmLogout: () -> Unit
+    onConfirmLogout: () -> Unit,
+    onSignOutGoogle: () -> Unit = {}
 ) {
     val roleDisplay = when (role) {
         UserRole.CUSTOMER -> "Citizen Portal"
@@ -443,6 +542,24 @@ private fun LogoutConfirmationDialog(
                     .testTag("confirm_logout_button")
             ) {
                 Text("Confirm Logout", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        if (!googleEmail.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(
+                onClick = {
+                    onDismiss()
+                    onSignOutGoogle()
+                },
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ) {
+                Text(
+                    text = "Also sign out Google ($googleEmail)",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextMuted
+                )
             }
         }
     }

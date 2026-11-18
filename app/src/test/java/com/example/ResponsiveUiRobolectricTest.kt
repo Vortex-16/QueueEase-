@@ -16,16 +16,23 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
+import com.example.data.model.ChatMessage
 import com.example.ui.components.QEaseLayoutMetrics
 import com.example.ui.components.QEaseWindowWidthClass
-import com.example.ui.screens.AdminPanelScreen
+import com.example.ui.screens.AdminAnalyticsScreen
+import com.example.ui.screens.AdminApprovalsScreen
+import com.example.ui.screens.AdminMonitorScreen
+import com.example.ui.screens.AdminOpsScreen
 import com.example.ui.screens.AiAssistantScreen
 import com.example.ui.screens.CentresScreen
+import com.example.ui.screens.ChatBubblePolish
 import com.example.ui.screens.CustomerHomeScreen
 import com.example.ui.screens.MyQueueScreen
 import com.example.ui.screens.ReviewsFeedbackScreen
 import com.example.ui.screens.ServicesScreen
+import com.example.ui.screens.StaffAlertsScreen
 import com.example.ui.screens.StaffDeskScreen
+import com.example.ui.screens.StaffProposalsScreen
 import com.example.ui.screens.WelcomeScreen
 import com.example.ui.screens.WhereIsMyTurnScreen
 import com.example.ui.theme.MyApplicationTheme
@@ -235,7 +242,12 @@ class ResponsiveUiRobolectricTest {
                             3 -> ReviewsFeedbackScreen(viewModel = vm)
                             4 -> AiAssistantScreen(viewModel = vm)
                             5 -> StaffDeskScreen(viewModel = vm)
-                            else -> AdminPanelScreen(viewModel = vm)
+                            6 -> StaffProposalsScreen(viewModel = vm)
+                            7 -> StaffAlertsScreen(viewModel = vm)
+                            8 -> AdminMonitorScreen(viewModel = vm)
+                            9 -> AdminApprovalsScreen(viewModel = vm)
+                            10 -> AdminOpsScreen(viewModel = vm)
+                            else -> AdminAnalyticsScreen(viewModel = vm)
                         }
                     }
                 }
@@ -254,6 +266,48 @@ class ResponsiveUiRobolectricTest {
         composeTestRule.runOnIdle { screenState.intValue = 5 }
         composeTestRule.onNodeWithTag("staff_desk_screen").assertIsDisplayed()
         composeTestRule.runOnIdle { screenState.intValue = 6 }
-        composeTestRule.onNodeWithTag("admin_panel_screen").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("staff_proposals_screen").assertIsDisplayed()
+        composeTestRule.runOnIdle { screenState.intValue = 7 }
+        composeTestRule.onNodeWithTag("staff_alerts_screen").assertIsDisplayed()
+        composeTestRule.runOnIdle { screenState.intValue = 8 }
+        composeTestRule.onNodeWithTag("admin_monitor_screen").assertIsDisplayed()
+        composeTestRule.runOnIdle { screenState.intValue = 9 }
+        composeTestRule.onNodeWithTag("admin_approvals_screen").assertIsDisplayed()
+        composeTestRule.runOnIdle { screenState.intValue = 10 }
+        composeTestRule.onNodeWithTag("admin_ops_screen").assertIsDisplayed()
+        composeTestRule.runOnIdle { screenState.intValue = 11 }
+        composeTestRule.onNodeWithTag("admin_analytics_screen").assertIsDisplayed()
+    }
+
+    @Test
+    fun `ai chat bubble formats markdown cleanly without raw stars or hashes`() {
+        val sampleAiMessage = ChatMessage(
+            id = "test_ai_1",
+            isUser = false,
+            message = """
+                ## Passport Renewal Guide
+                **Key Requirements:**
+                * Bring **Original Passport** and *Utility Bill*
+                1. Counter A biometric verification
+            """.trimIndent(),
+            groundedSources = listOf("Regional Passport Office"),
+            suggestedServiceId = "srv_passport_renew"
+        )
+
+        composeTestRule.setContent {
+            MyApplicationTheme {
+                ChatBubblePolish(
+                    message = sampleAiMessage,
+                    onOpenService = {}
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Passport Renewal Guide").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Key Requirements").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Bring Original Passport and Utility Bill").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Counter A biometric verification").assertIsDisplayed()
+        composeTestRule.onNodeWithText("*", substring = true).assertDoesNotExist()
+        composeTestRule.onNodeWithText("##", substring = true).assertDoesNotExist()
     }
 }

@@ -17,7 +17,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -29,9 +28,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.model.UserRole
+import com.example.data.remote.GoogleSignInButton
 import com.example.ui.components.AdaptiveGridRow
 import com.example.ui.components.rememberQEaseLayoutMetrics
 import com.example.ui.theme.*
+import com.google.firebase.auth.FirebaseUser
 
 private data class WelcomeCapabilityItem(
     val icon: ImageVector,
@@ -54,7 +55,12 @@ private data class WelcomePortalItem(
 @Composable
 fun WelcomeScreen(
     onStartCitizenLogin: () -> Unit,
-    onSelectRoleLogin: (UserRole) -> Unit
+    onSelectRoleLogin: (UserRole) -> Unit,
+    firebaseUser: FirebaseUser? = null,
+    googleAuthError: String? = null,
+    onGoogleAuthSuccess: () -> Unit = {},
+    onGoogleAuthError: (String) -> Unit = {},
+    onSignOutGoogle: () -> Unit = {}
 ) {
     val scrollState = rememberScrollState()
 
@@ -158,17 +164,14 @@ fun WelcomeScreen(
                     Surface(
                         shape = RoundedCornerShape(28.dp),
                         color = DeepForestDark,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, DeepForestMedium),
                         shadowElevation = 10.dp,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(
-                                    Brush.linearGradient(
-                                        colors = listOf(DeepForestDark, DeepForestMedium)
-                                    )
-                                )
+                                .background(DeepForestDark)
                                 .padding(if (metrics.isCompact) 22.dp else 30.dp)
                         ) {
                             Column(
@@ -235,25 +238,47 @@ fun WelcomeScreen(
                                         color = Color.White.copy(alpha = 0.15f),
                                         shape = RoundedCornerShape(20.dp)
                                     ) {
-                                        Text(
-                                            text = "⚡ Real-Time DB Sync",
-                                            color = Color.White,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(5.dp),
                                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
-                                        )
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Bolt,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(13.dp)
+                                            )
+                                            Text(
+                                                text = "Real-Time DB Sync",
+                                                color = Color.White,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                     }
                                     Surface(
                                         color = Color.White.copy(alpha = 0.15f),
                                         shape = RoundedCornerShape(20.dp)
                                     ) {
-                                        Text(
-                                            text = "🛡️ RBAC Guarded",
-                                            color = Color.White,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(5.dp),
                                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
-                                        )
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Shield,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(13.dp)
+                                            )
+                                            Text(
+                                                text = "RBAC Guarded",
+                                                color = Color.White,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -293,7 +318,101 @@ fun WelcomeScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(28.dp))
+                    Spacer(modifier = Modifier.height(22.dp))
+
+                    // Google Cloud Sync Account Card
+                    Surface(
+                        color = SurfaceGlass,
+                        shape = RoundedCornerShape(18.dp),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (firebaseUser != null) PolishGreen.copy(alpha = 0.35f) else BorderPolish
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("google_cloud_sync_card")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Surface(
+                                    color = if (firebaseUser != null) PolishGreenBg else SageContainer,
+                                    shape = CircleShape,
+                                    modifier = Modifier.size(38.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = if (firebaseUser != null) Icons.Default.CloudDone else Icons.Default.CloudSync,
+                                            contentDescription = "Cloud Sync",
+                                            tint = if (firebaseUser != null) PolishGreen else DeepForestDark,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = if (firebaseUser != null) "Google Cloud Sync Connected" else "Connect Google Account",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = DeepForestDark
+                                    )
+                                    Text(
+                                        text = if (firebaseUser != null) {
+                                            val name = firebaseUser.displayName?.takeIf { it.isNotBlank() } ?: "Verified Google User"
+                                            val mail = firebaseUser.email ?: ""
+                                            if (mail.isNotBlank()) "$name • $mail" else name
+                                        } else {
+                                            "Sign in with Google to synchronize live Firestore queues across devices."
+                                        },
+                                        fontSize = 11.sp,
+                                        color = TextMuted,
+                                        lineHeight = 15.sp
+                                    )
+                                }
+                            }
+
+                            if (firebaseUser == null) {
+                                GoogleSignInButton(
+                                    onAuthSuccess = onGoogleAuthSuccess,
+                                    onAuthError = onGoogleAuthError,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            } else {
+                                OutlinedButton(
+                                    onClick = onSignOutGoogle,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
+                                        .testTag("google_signout_button")
+                                ) {
+                                    Text(
+                                        text = "Sign Out Google Account",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = DeepForestDark
+                                    )
+                                }
+                            }
+
+                            if (!googleAuthError.isNullOrBlank()) {
+                                Text(
+                                    text = googleAuthError,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = PolishRed
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(22.dp))
 
                     // Role Access Selector
                     Text(

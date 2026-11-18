@@ -74,4 +74,36 @@ interface QEaseDao {
 
     @Query("SELECT * FROM user_accounts WHERE email = :email LIMIT 1")
     suspend fun getAccountByEmail(email: String): UserAccountEntity?
+
+    // Service Change Proposals (Staff -> Admin approval gate)
+    @Query("SELECT * FROM service_change_proposals ORDER BY submittedAt DESC")
+    fun getAllProposals(): Flow<List<ServiceChangeProposalEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertProposal(proposal: ServiceChangeProposalEntity)
+
+    // Staff & Admin Notifications
+    @Query("SELECT * FROM staff_notifications ORDER BY timestamp DESC")
+    fun getAllNotifications(): Flow<List<StaffNotificationEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertNotification(notification: StaffNotificationEntity)
+
+    @Query("UPDATE staff_notifications SET isRead = 1 WHERE id = :notificationId")
+    suspend fun markNotificationRead(notificationId: String)
+
+    // System Settings
+    @Query("SELECT * FROM system_settings WHERE id = 'global' LIMIT 1")
+    fun observeGlobalSettings(): Flow<SystemSettingsEntity?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSystemSettings(settings: SystemSettingsEntity)
+
+    // Audit Logs
+    @Query("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 100")
+    fun getRecentAuditLogs(): Flow<List<AuditLogEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAuditLog(log: AuditLogEntity)
 }
+

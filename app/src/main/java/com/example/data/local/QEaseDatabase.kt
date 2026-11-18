@@ -12,9 +12,13 @@ import androidx.room.RoomDatabase
         OfflineCrowdReportEntity::class,
         CentreReviewEntity::class,
         LiveQueueUpdateEntity::class,
-        UserAccountEntity::class
+        UserAccountEntity::class,
+        ServiceChangeProposalEntity::class,
+        StaffNotificationEntity::class,
+        SystemSettingsEntity::class,
+        AuditLogEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class QEaseDatabase : RoomDatabase() {

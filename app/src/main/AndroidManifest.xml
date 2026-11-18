@@ -18,6 +18,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:label="@string/app_name"
             android:theme="@style/Theme.MyApplication">
             <intent-filter>
@@ -26,6 +27,34 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Role-Specific Home Screen App Widgets -->
+        <receiver
+            android:name=".widget.StaffDeskWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_staff_desk_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.widget.ACTION_STAFF_PRIMARY_ACTION" />
+                <action android:name="com.example.widget.ACTION_STAFF_TOGGLE_COUNTER" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/staff_desk_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.AdminMonitorWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_admin_monitor_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.widget.ACTION_ADMIN_SYNC" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/admin_monitor_widget_info" />
+        </receiver>
     </application>
 
 </manifest>

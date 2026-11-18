@@ -1,0 +1,841 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default-Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =====================================================
+    // GLOBAL HELPERS & ROLE GUARDS
+    // =====================================================
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isBootstrappedAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email == 'vikasharmy811@gmail.com' &&
+        request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        isBootstrappedAdmin()
+      );
+    }
+
+    function isStaff() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/staff_access/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/staff_access/$(request.auth.uid)).data.active == true;
+    }
+
+    function isStaffOrAdmin() {
+      return isAdmin() || isStaff();
+    }
+
+    function isValidServerTs(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function isValidStr(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    // =====================================================
+    // ENTITY VALIDATION HELPERS (ANTI-UPDATE-GAP)
+    // =====================================================
+
+    function isValidUserProfile(data) {
+      return isValidStr(data.userId, 1, 128) &&
+        isValidStr(data.displayName, 1, 80) &&
+        isValidStr(data.email, 3, 120) &&
+        (!('phone' in data) || data.phone == null || (data.phone is string && data.phone.size() <= 25)) &&
+        data.lastPortalRole in ['CUSTOMER', 'STAFF', 'ADMIN'] &&
+        isValidServerTs(data.createdAt) &&
+        isValidServerTs(data.updatedAt);
+    }
+
+    function isValidAdminDoc(data) {
+      return isValidStr(data.userId, 1, 128) &&
+        isValidStr(data.email, 3, 120) &&
+        data.role == 'ADMIN' &&
+        isValidServerTs(data.createdAt) &&
+        isValidServerTs(data.updatedAt);
+    }
+
+    function isValidStaffAccess(data) {
+      return isValidStr(data.userId, 1, 128) &&
+        isValidStr(data.email, 3, 120) &&
+        isValidId(data.staffProfileId) &&
+        isValidId(data.assignedCentreId) &&
+        isValidId(data.assignedCounterId) &&
+        data.active is bool &&
+        isValidServerTs(data.createdAt) &&
+        isValidServerTs(data.updatedAt);
+    }
+
+    function isValidStaffProfile(data) {
+      return isValidStr(data.name, 2, 80) &&
+        isValidStr(data.email, 3, 120) &&
+        isValidStr(data.phone, 0, 25) &&
+        isValidId(data.assignedCentreId) &&
+        isValidId(data.assignedCounterId) &&
+        isValidStr(data.department, 0, 120) &&
+        isValidStr(data.pin, 4, 12) &&
+        data.active is bool &&
+        isValidStr(data.createdByUid, 1, 128) &&
+        isValidServerTs(data.createdAt) &&
+        isValidServerTs(data.updatedAt);
+    }
+
+    function isValidService(data) {
+      return data.category in ['CIVIL_ID', 'HEALTHCARE', 'TRANSPORT_RTO', 'BANKING_FINANCE', 'MUNICIPAL_CIVIC', 'EDUCATION'] &&
+        isValidStr(data.title, 2, 120) &&
+        isValidStr(data.code, 1, 40) &&
+        isValidStr(data.description, 1, 800) &&
+        isValidStr(data.officialFee, 1, 120) &&
+        data.avgProcessingDurationMin is int && data.avgProcessingDurationMin >= 1 && data.avgProcessingDurationMin <= 300 &&
+        isValidStr(data.eligibility, 0, 500) &&
+        data.proceduralSteps is list && data.proceduralSteps.size() <= 20 &&
+        data.requiredDocuments is list && data.requiredDocuments.size() <= 25 &&
+        data.available is bool &&
+        isValidStr(data.cautionNote, 0, 500) &&
+        data.visibility == 'PUBLIC' &&
+        isValidStr(data.updatedByUid, 1, 128) &&
+        isValidServerTs(data.createdAt) &&
+        isValidServerTs(data.updatedAt);
+    }
+
+    function isValidCentre(data) {
+      return isValidStr(data.name, 2, 120) &&
+        data.category in ['CIVIL_ID', 'HEALTHCARE', 'TRANSPORT_RTO', 'BANKING_FINANCE', 'MUNICIPAL_CIVIC', 'EDUCATION'] &&
+        isValidStr(data.address, 2, 240) &&
+        data.latitude is number &&
+        data.longitude is number &&
+        data.distanceKm is number &&
+        isValidStr(data.operatingHours, 2, 120) &&
+        isValidStr(data.phone, 2, 30) &&
+        data.activeCountersCount is int && data.activeCountersCount >= 0 && data.activeCountersCount <= 100 &&
+        data.totalCountersCount is int && data.totalCountersCount >= 1 && data.totalCountersCount <= 100 &&
+        data.currentCrowdLevel in ['LOW', 'MODERATE', 'HIGH', 'SEVERE'] &&
+        data.estimatedWaitMin is int && data.estimatedWaitMin >= 0 && data.estimatedWaitMin <= 600 &&
+        data.estimatedWaitMax is int && data.estimatedWaitMax >= 0 && data.estimatedWaitMax <= 600 &&
+        data.lastCrowdUpdateMinutesAgo is int && data.lastCrowdUpdateMinutesAgo >= 0 &&
+        data.crowdConfidencePercent is int && data.crowdConfidencePercent >= 0 && data.crowdConfidencePercent <= 100 &&
+        isValidStr(data.bestTimeToVisit, 1, 120) &&
+        data.virtualQueueOpen is bool &&
+        data.availableServiceIds is list && data.availableServiceIds.size() <= 30 &&
+        (data.availableServiceIds.size() == 0 || data.availableServiceIds[0] is string) &&
+        data.rating is number && data.rating >= 0 && data.rating <= 5 &&
+        data.totalReviewsCount is int && data.totalReviewsCount >= 0 &&
+        (!('liveNotice' in data) || data.liveNotice == null || (data.liveNotice is string && data.liveNotice.size() <= 300)) &&
+        data.visibility == 'PUBLIC' &&
+        isValidStr(data.updatedByUid, 1, 128) &&
+        isValidServerTs(data.createdAt) &&
+        isValidServerTs(data.updatedAt);
+    }
+
+    function isValidCounter(data) {
+      return isValidId(data.centreId) &&
+        data.counterNumber is int && data.counterNumber >= 1 && data.counterNumber <= 100 &&
+        isValidStr(data.name, 2, 120) &&
+        isValidStr(data.assignedStaffName, 2, 80) &&
+        data.active is bool &&
+        (!('currentServingToken' in data) || data.currentServingToken == null || (data.currentServingToken is string && data.currentServingToken.size() <= 40)) &&
+        data.handledServiceIds is list && data.handledServiceIds.size() <= 30 &&
+        (data.handledServiceIds.size() == 0 || data.handledServiceIds[0] is string) &&
+        data.visibility == 'PUBLIC' &&
+        isValidStr(data.updatedByUid, 1, 128) &&
+        isValidServerTs(data.createdAt) &&
+        isValidServerTs(data.updatedAt);
+    }
+
+    function isValidToken(data) {
+      return isValidStr(data.tokenNumber, 2, 20) &&
+        isValidId(data.centreId) &&
+        isValidStr(data.centreName, 2, 120) &&
+        isValidId(data.serviceId) &&
+        isValidStr(data.serviceName, 2, 120) &&
+        isValidStr(data.userId, 1, 128) &&
+        isValidStr(data.userName, 1, 80) &&
+        isValidStr(data.userPhone, 1, 30) &&
+        data.status in ['WAITING', 'CALLED', 'SERVING', 'COMPLETED', 'CANCELLED', 'NO_SHOW'] &&
+        (!('counterNumber' in data) || data.counterNumber == null || (data.counterNumber is int && data.counterNumber >= 1 && data.counterNumber <= 100)) &&
+        (!('counterName' in data) || data.counterName == null || (data.counterName is string && data.counterName.size() <= 120)) &&
+        data.positionInQueue is int && data.positionInQueue >= 0 && data.positionInQueue <= 10000 &&
+        data.peopleAhead is int && data.peopleAhead >= 0 && data.peopleAhead <= 10000 &&
+        data.estimatedWaitMin is int && data.estimatedWaitMin >= 0 && data.estimatedWaitMin <= 600 &&
+        data.estimatedWaitMax is int && data.estimatedWaitMax >= 0 && data.estimatedWaitMax <= 600 &&
+        data.joinedAtTimestamp is int &&
+        (!('calledAtTimestamp' in data) || data.calledAtTimestamp == null || data.calledAtTimestamp is int) &&
+        (!('servingAtTimestamp' in data) || data.servingAtTimestamp == null || data.servingAtTimestamp is int) &&
+        (!('completedAtTimestamp' in data) || data.completedAtTimestamp == null || data.completedAtTimestamp is int) &&
+        isValidStr(data.qrVerificationCode, 4, 80) &&
+        isValidServerTs(data.createdAt) &&
+        isValidServerTs(data.updatedAt);
+    }
+
+    function isValidProposal(data) {
+      return data.proposalType in ['SERVICE_INFO', 'REQUIRED_DOCUMENT_ADD', 'REQUIRED_DOCUMENT_UPDATE', 'REQUIRED_DOCUMENT_REMOVE'] &&
+        isValidId(data.serviceId) &&
+        isValidStr(data.serviceTitle, 2, 120) &&
+        isValidStr(data.centreId, 0, 128) &&
+        isValidStr(data.submittedByStaffId, 1, 128) &&
+        isValidStr(data.submittedByUid, 1, 128) &&
+        isValidStr(data.submittedByStaffName, 2, 80) &&
+        data.assignedCounterNumber is int && data.assignedCounterNumber >= 1 && data.assignedCounterNumber <= 100 &&
+        isValidStr(data.rationale, 5, 500) &&
+        data.status in ['PENDING', 'APPROVED', 'REJECTED'] &&
+        data.submittedAt is int &&
+        (!('reviewedAt' in data) || data.reviewedAt == null || data.reviewedAt is int) &&
+        (!('reviewedByAdminName' in data) || data.reviewedByAdminName == null || (data.reviewedByAdminName is string && data.reviewedByAdminName.size() <= 80)) &&
+        isValidStr(data.adminReviewNote, 0, 500) &&
+        isValidStr(data.previousFee, 0, 120) &&
+        isValidStr(data.proposedFee, 0, 120) &&
+        data.previousDurationMin is int &&
+        data.proposedDurationMin is int &&
+        isValidStr(data.previousDescription, 0, 800) &&
+        isValidStr(data.proposedDescription, 0, 800) &&
+        isValidStr(data.previousEligibility, 0, 500) &&
+        isValidStr(data.proposedEligibility, 0, 500) &&
+        isValidStr(data.previousCautionNote, 0, 500) &&
+        isValidStr(data.proposedCautionNote, 0, 500) &&
+        isValidStr(data.documentId, 0, 128) &&
+        isValidStr(data.previousDocName, 0, 120) &&
+        isValidStr(data.proposedDocName, 0, 120) &&
+        isValidStr(data.previousDocDescription, 0, 500) &&
+        isValidStr(data.proposedDocDescription, 0, 500) &&
+        data.previousDocMandatory is bool &&
+        data.proposedDocMandatory is bool &&
+        data.previousDocAlternatives is list && data.previousDocAlternatives.size() <= 15 &&
+        (data.previousDocAlternatives.size() == 0 || data.previousDocAlternatives[0] is string) &&
+        data.proposedDocAlternatives is list && data.proposedDocAlternatives.size() <= 15 &&
+        (data.proposedDocAlternatives.size() == 0 || data.proposedDocAlternatives[0] is string) &&
+        isValidServerTs(data.createdAt) &&
+        isValidServerTs(data.updatedAt);
+    }
+
+    function isValidNotification(data) {
+      return isValidStr(data.title, 1, 140) &&
+        isValidStr(data.message, 1, 500) &&
+        data.targetRole in ['CUSTOMER', 'STAFF', 'ADMIN'] &&
+        (!('centreId' in data) || data.centreId == null || (data.centreId is string && data.centreId.size() <= 128)) &&
+        (!('counterId' in data) || data.counterId == null || (data.counterId is string && data.counterId.size() <= 128)) &&
+        data.severity in ['INFO', 'ACTION_REQUIRED', 'APPROVED', 'ALERT'] &&
+        data.read is bool &&
+        data.timestamp is int &&
+        (!('relatedTokenNumber' in data) || data.relatedTokenNumber == null || (data.relatedTokenNumber is string && data.relatedTokenNumber.size() <= 20)) &&
+        isValidStr(data.recipientUid, 1, 128) &&
+        isValidServerTs(data.createdAt) &&
+        isValidServerTs(data.updatedAt);
+    }
+
+    function isValidSystemSettings(data) {
+      return data.autoNoShowTimeoutMinutes is int && data.autoNoShowTimeoutMinutes >= 1 && data.autoNoShowTimeoutMinutes <= 180 &&
+        data.maxActiveTokensPerCitizen is int && data.maxActiveTokensPerCitizen >= 1 && data.maxActiveTokensPerCitizen <= 10 &&
+        data.crowdDecayHalfLifeMinutes is int && data.crowdDecayHalfLifeMinutes >= 5 && data.crowdDecayHalfLifeMinutes <= 180 &&
+        data.walkInBufferPerHour is int && data.walkInBufferPerHour >= 0 && data.walkInBufferPerHour <= 50 &&
+        data.maintenanceMode is bool &&
+        isValidStr(data.maintenanceBanner, 0, 300) &&
+        data.updatedAtMillis is int &&
+        isValidStr(data.updatedByAdmin, 1, 80) &&
+        data.visibility == 'PUBLIC' &&
+        isValidServerTs(data.createdAt) &&
+        isValidServerTs(data.updatedAt);
+    }
+
+    function isValidCrowdReport(data) {
+      return isValidStr(data.userId, 1, 128) &&
+        isValidId(data.centreId) &&
+        isValidStr(data.centreName, 2, 120) &&
+        data.crowdLevel in ['LOW', 'MODERATE', 'HIGH', 'SEVERE'] &&
+        data.approxPeopleCount is int && data.approxPeopleCount >= 0 && data.approxPeopleCount <= 5000 &&
+        data.reportedWaitMinutes is int && data.reportedWaitMinutes >= 0 && data.reportedWaitMinutes <= 600 &&
+        isValidStr(data.notes, 0, 500) &&
+        isValidStr(data.reporterName, 1, 80) &&
+        data.timestamp is int &&
+        data.upvotesCount is int && data.upvotesCount >= 0 &&
+        data.staffVerified is bool &&
+        data.confidenceScore is int && data.confidenceScore >= 0 && data.confidenceScore <= 100 &&
+        data.visibility == 'PUBLIC' &&
+        isValidServerTs(data.createdAt) &&
+        isValidServerTs(data.updatedAt);
+    }
+
+    function isValidReview(data) {
+      return isValidStr(data.userId, 1, 128) &&
+        isValidId(data.centreId) &&
+        isValidStr(data.centreName, 2, 120) &&
+        isValidStr(data.userName, 1, 80) &&
+        data.rating is int && data.rating >= 1 && data.rating <= 5 &&
+        isValidStr(data.reviewText, 1, 1000) &&
+        isValidStr(data.visitTag, 1, 80) &&
+        data.queueSpeedRating in ['Fast', 'Normal', 'Slow'] &&
+        data.timestamp is int &&
+        data.helpfulCount is int && data.helpfulCount >= 0 &&
+        data.verifiedVisitor is bool &&
+        data.visibility == 'PUBLIC' &&
+        isValidServerTs(data.createdAt) &&
+        isValidServerTs(data.updatedAt);
+    }
+
+    function isValidLiveUpdate(data) {
+      return isValidStr(data.userId, 1, 128) &&
+        isValidId(data.centreId) &&
+        isValidStr(data.centreName, 2, 120) &&
+        isValidStr(data.reporterName, 1, 80) &&
+        isValidStr(data.updateTag, 1, 40) &&
+        isValidStr(data.message, 1, 500) &&
+        data.timestamp is int &&
+        isValidStr(data.currentServingEstimate, 1, 80) &&
+        data.upvotes is int && data.upvotes >= 0 &&
+        data.visibility == 'PUBLIC' &&
+        isValidServerTs(data.createdAt) &&
+        isValidServerTs(data.updatedAt);
+    }
+
+    function isValidAuditLog(data) {
+      return data.timestamp is int &&
+        isValidStr(data.action, 2, 60) &&
+        isValidStr(data.actorName, 1, 80) &&
+        data.actorRole in ['CUSTOMER', 'STAFF', 'ADMIN'] &&
+        isValidStr(data.actorUid, 1, 128) &&
+        isValidStr(data.details, 1, 500) &&
+        (!('centreId' in data) || data.centreId == null || (data.centreId is string && data.centreId.size() <= 128)) &&
+        isValidServerTs(data.createdAt);
+    }
+
+    // =====================================================
+    // COLLECTION RULES
+    // =====================================================
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+      allow list: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
+
+      allow create: if isSignedIn() &&
+        isValidId(userId) &&
+        request.auth.uid == userId &&
+        isValidUserProfile(incoming()) &&
+        incoming().userId == userId &&
+        incoming().keys().hasAll(['userId', 'displayName', 'email', 'lastPortalRole', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['userId', 'displayName', 'email', 'phone', 'lastPortalRole', 'createdAt', 'updatedAt']);
+
+      allow update: if isSignedIn() &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming()) &&
+        (request.auth.uid == userId || isAdmin()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'phone', 'lastPortalRole', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+    }
+
+    match /admins/{uid} {
+      allow get: if isSignedIn() && isValidId(uid) && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if isSignedIn() &&
+        isValidId(uid) &&
+        isValidAdminDoc(incoming()) &&
+        isAdmin() &&
+        incoming().userId == uid &&
+        incoming().keys().hasAll(['userId', 'email', 'role', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['userId', 'email', 'role', 'createdAt', 'updatedAt']);
+
+      allow update: if isSignedIn() &&
+        isValidId(uid) &&
+        isValidAdminDoc(incoming()) &&
+        isAdmin() &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt;
+
+      allow delete: if isSignedIn() && isValidId(uid) && isAdmin();
+    }
+
+    match /staff_access/{uid} {
+      allow get: if isSignedIn() && isValidId(uid) && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if isSignedIn() &&
+        isValidId(uid) &&
+        isValidStaffAccess(incoming()) &&
+        incoming().userId == uid &&
+        incoming().keys().hasAll(['userId', 'email', 'staffProfileId', 'assignedCentreId', 'assignedCounterId', 'active', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['userId', 'email', 'staffProfileId', 'assignedCentreId', 'assignedCounterId', 'active', 'createdAt', 'updatedAt']) &&
+        (
+          isAdmin() ||
+          (
+            request.auth.uid == uid &&
+            request.auth.token.email_verified == true &&
+            incoming().email == request.auth.token.email &&
+            incoming().active == true &&
+            exists(/databases/$(database)/documents/staff_profiles/$(incoming().staffProfileId)) &&
+            get(/databases/$(database)/documents/staff_profiles/$(incoming().staffProfileId)).data.email == request.auth.token.email &&
+            get(/databases/$(database)/documents/staff_profiles/$(incoming().staffProfileId)).data.active == true &&
+            incoming().assignedCentreId == get(/databases/$(database)/documents/staff_profiles/$(incoming().staffProfileId)).data.assignedCentreId &&
+            incoming().assignedCounterId == get(/databases/$(database)/documents/staff_profiles/$(incoming().staffProfileId)).data.assignedCounterId
+          )
+        );
+
+      allow update: if isSignedIn() &&
+        isValidId(uid) &&
+        isValidStaffAccess(incoming()) &&
+        isAdmin() &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt;
+
+      allow delete: if isSignedIn() && isValidId(uid) && isAdmin();
+    }
+
+    match /staff_profiles/{staffId} {
+      allow get: if isSignedIn() && isValidId(staffId) && (
+        isAdmin() ||
+        (request.auth.token.email_verified == true && resource.data.email == request.auth.token.email)
+      );
+      allow list: if isSignedIn() && (
+        isAdmin() ||
+        (request.auth.token.email_verified == true && resource.data.email == request.auth.token.email)
+      );
+
+      allow create: if isSignedIn() &&
+        isValidId(staffId) &&
+        isValidStaffProfile(incoming()) &&
+        isAdmin() &&
+        incoming().createdByUid == request.auth.uid &&
+        incoming().keys().hasAll(['name', 'email', 'phone', 'assignedCentreId', 'assignedCounterId', 'department', 'pin', 'active', 'createdByUid', 'createdAt', 'updatedAt']) &&
+        incoming().keys().hasOnly(['name', 'email', 'phone', 'assignedCentreId', 'assignedCounterId', 'department', 'pin', 'active', 'createdByUid', 'createdAt', 'updatedAt']);
+
+      allow update: if isSignedIn() &&
+        isValidId(staffId) &&
+        isValidStaffProfile(incoming()) &&
+        isAdmin() &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().createdByUid == existing().createdByUid &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'name', 'email', 'phone', 'assignedCentreId', 'assignedCounterId', 'department', 'pin', 'active', 'updatedAt'
+        ]);
+
+      allow delete: if isSignedIn() && isValidId(staffId) && isAdmin();
+    }
+
+    match /services/{serviceId} {
+      allow get: if isSignedIn() && isValidId(serviceId) && (resource.data.visibility == 'PUBLIC' || isAdmin());
+      allow list: if isSignedIn() && resource.data.visibility == 'PUBLIC';
+
+      allow create: if isSignedIn() &&
+        isValidId(serviceId) &&
+        isValidService(incoming()) &&
+        isAdmin() &&
+        incoming().updatedByUid == request.auth.uid &&
+        incoming().keys().hasAll([
+          'category', 'title', 'code', 'description', 'officialFee', 'avgProcessingDurationMin',
+          'eligibility', 'proceduralSteps', 'requiredDocuments', 'available', 'cautionNote',
+          'visibility', 'updatedByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'category', 'title', 'code', 'description', 'officialFee', 'avgProcessingDurationMin',
+          'eligibility', 'proceduralSteps', 'requiredDocuments', 'available', 'cautionNote',
+          'visibility', 'updatedByUid', 'createdAt', 'updatedAt'
+        ]);
+
+      allow update: if isSignedIn() &&
+        isValidId(serviceId) &&
+        isValidService(incoming()) &&
+        isAdmin() &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'category', 'title', 'code', 'description', 'officialFee', 'avgProcessingDurationMin',
+          'eligibility', 'proceduralSteps', 'requiredDocuments', 'available', 'cautionNote',
+          'updatedByUid', 'updatedAt'
+        ]);
+
+      allow delete: if isSignedIn() && isValidId(serviceId) && isAdmin();
+    }
+
+    match /centres/{centreId} {
+      allow get: if isSignedIn() && isValidId(centreId) && (resource.data.visibility == 'PUBLIC' || isAdmin());
+      allow list: if isSignedIn() && resource.data.visibility == 'PUBLIC';
+
+      allow create: if isSignedIn() &&
+        isValidId(centreId) &&
+        isValidCentre(incoming()) &&
+        isAdmin() &&
+        incoming().updatedByUid == request.auth.uid &&
+        incoming().keys().hasAll([
+          'name', 'category', 'address', 'latitude', 'longitude', 'distanceKm',
+          'operatingHours', 'phone', 'activeCountersCount', 'totalCountersCount',
+          'currentCrowdLevel', 'estimatedWaitMin', 'estimatedWaitMax',
+          'lastCrowdUpdateMinutesAgo', 'crowdConfidencePercent', 'bestTimeToVisit',
+          'virtualQueueOpen', 'availableServiceIds', 'rating', 'totalReviewsCount',
+          'visibility', 'updatedByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'name', 'category', 'address', 'latitude', 'longitude', 'distanceKm',
+          'operatingHours', 'phone', 'activeCountersCount', 'totalCountersCount',
+          'currentCrowdLevel', 'estimatedWaitMin', 'estimatedWaitMax',
+          'lastCrowdUpdateMinutesAgo', 'crowdConfidencePercent', 'bestTimeToVisit',
+          'virtualQueueOpen', 'availableServiceIds', 'rating', 'totalReviewsCount',
+          'liveNotice', 'visibility', 'updatedByUid', 'createdAt', 'updatedAt'
+        ]);
+
+      allow update: if isSignedIn() &&
+        isValidId(centreId) &&
+        isValidCentre(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isAdmin() ||
+          (isStaff() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'activeCountersCount', 'crowdConfidencePercent', 'lastCrowdUpdateMinutesAgo',
+            'currentCrowdLevel', 'estimatedWaitMin', 'estimatedWaitMax', 'updatedByUid', 'updatedAt'
+          ])) ||
+          (incoming().diff(existing()).affectedKeys().hasOnly([
+            'rating', 'totalReviewsCount', 'updatedAt'
+          ]))
+        );
+
+      allow delete: if isSignedIn() && isValidId(centreId) && isAdmin();
+    }
+
+    match /counters/{counterId} {
+      allow get: if isSignedIn() && isValidId(counterId) && (resource.data.visibility == 'PUBLIC' || isAdmin());
+      allow list: if isSignedIn() && resource.data.visibility == 'PUBLIC';
+
+      allow create: if isSignedIn() &&
+        isValidId(counterId) &&
+        isValidCounter(incoming()) &&
+        isAdmin() &&
+        incoming().updatedByUid == request.auth.uid &&
+        incoming().keys().hasAll([
+          'centreId', 'counterNumber', 'name', 'assignedStaffName',
+          'active', 'handledServiceIds', 'visibility', 'updatedByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'centreId', 'counterNumber', 'name', 'assignedStaffName',
+          'active', 'currentServingToken', 'handledServiceIds', 'visibility', 'updatedByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        exists(/databases/$(database)/documents/centres/$(incoming().centreId));
+
+      allow update: if isSignedIn() &&
+        isValidId(counterId) &&
+        isValidCounter(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().centreId == existing().centreId &&
+        (
+          isAdmin() ||
+          (isStaff() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'active', 'currentServingToken', 'updatedByUid', 'updatedAt'
+          ]))
+        );
+
+      allow delete: if isSignedIn() && isValidId(counterId) && isAdmin();
+    }
+
+    match /tokens/{tokenId} {
+      allow get: if isSignedIn() && isValidId(tokenId) && (resource.data.userId == request.auth.uid || isStaffOrAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isStaffOrAdmin());
+
+      allow create: if isSignedIn() &&
+        isValidId(tokenId) &&
+        isValidToken(incoming()) &&
+        (incoming().userId == request.auth.uid || isStaffOrAdmin()) &&
+        incoming().status == 'WAITING' &&
+        incoming().keys().hasAll([
+          'tokenNumber', 'centreId', 'centreName', 'serviceId', 'serviceName',
+          'userId', 'userName', 'userPhone', 'status', 'positionInQueue',
+          'peopleAhead', 'estimatedWaitMin', 'estimatedWaitMax',
+          'joinedAtTimestamp', 'qrVerificationCode', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'tokenNumber', 'centreId', 'centreName', 'serviceId', 'serviceName',
+          'userId', 'userName', 'userPhone', 'status', 'counterNumber', 'counterName',
+          'positionInQueue', 'peopleAhead', 'estimatedWaitMin', 'estimatedWaitMax',
+          'joinedAtTimestamp', 'calledAtTimestamp', 'servingAtTimestamp', 'completedAtTimestamp',
+          'qrVerificationCode', 'createdAt', 'updatedAt'
+        ]) &&
+        exists(/databases/$(database)/documents/centres/$(incoming().centreId)) &&
+        exists(/databases/$(database)/documents/services/$(incoming().serviceId));
+
+      allow update: if isSignedIn() &&
+        isValidId(tokenId) &&
+        isValidToken(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        (existing().status in ['WAITING', 'CALLED', 'SERVING'] || isAdmin()) &&
+        (
+          isAdmin() ||
+          (
+            existing().userId == request.auth.uid &&
+            existing().status in ['WAITING', 'CALLED'] &&
+            incoming().status == 'CANCELLED' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          ) ||
+          (
+            isStaff() &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status', 'counterNumber', 'counterName', 'positionInQueue',
+              'peopleAhead', 'estimatedWaitMin', 'estimatedWaitMax',
+              'calledAtTimestamp', 'servingAtTimestamp', 'completedAtTimestamp', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isSignedIn() && isValidId(tokenId) && isAdmin();
+    }
+
+    match /service_change_proposals/{proposalId} {
+      allow get: if isSignedIn() && isValidId(proposalId) && (isAdmin() || resource.data.submittedByUid == request.auth.uid);
+      allow list: if isSignedIn() && (isAdmin() || resource.data.submittedByUid == request.auth.uid);
+
+      allow create: if isSignedIn() &&
+        isValidId(proposalId) &&
+        isValidProposal(incoming()) &&
+        isStaffOrAdmin() &&
+        incoming().submittedByUid == request.auth.uid &&
+        incoming().status == 'PENDING' &&
+        incoming().keys().hasAll([
+          'proposalType', 'serviceId', 'serviceTitle', 'centreId', 'submittedByStaffId',
+          'submittedByUid', 'submittedByStaffName', 'assignedCounterNumber', 'rationale',
+          'status', 'submittedAt', 'adminReviewNote', 'previousFee', 'proposedFee',
+          'previousDurationMin', 'proposedDurationMin', 'previousDescription', 'proposedDescription',
+          'previousEligibility', 'proposedEligibility', 'previousCautionNote', 'proposedCautionNote',
+          'documentId', 'previousDocName', 'proposedDocName', 'previousDocDescription',
+          'proposedDocDescription', 'previousDocMandatory', 'proposedDocMandatory',
+          'previousDocAlternatives', 'proposedDocAlternatives', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'proposalType', 'serviceId', 'serviceTitle', 'centreId', 'submittedByStaffId',
+          'submittedByUid', 'submittedByStaffName', 'assignedCounterNumber', 'rationale',
+          'status', 'submittedAt', 'reviewedAt', 'reviewedByAdminName', 'adminReviewNote',
+          'previousFee', 'proposedFee', 'previousDurationMin', 'proposedDurationMin',
+          'previousDescription', 'proposedDescription', 'previousEligibility', 'proposedEligibility',
+          'previousCautionNote', 'proposedCautionNote', 'documentId', 'previousDocName',
+          'proposedDocName', 'previousDocDescription', 'proposedDocDescription',
+          'previousDocMandatory', 'proposedDocMandatory', 'previousDocAlternatives',
+          'proposedDocAlternatives', 'createdAt', 'updatedAt'
+        ]) &&
+        exists(/databases/$(database)/documents/services/$(incoming().serviceId));
+
+      allow update: if isSignedIn() &&
+        isValidId(proposalId) &&
+        isValidProposal(incoming()) &&
+        isAdmin() &&
+        existing().status == 'PENDING' &&
+        incoming().submittedByUid == existing().submittedByUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'reviewedAt', 'reviewedByAdminName', 'adminReviewNote', 'updatedAt'
+        ]);
+
+      allow delete: if isSignedIn() && isValidId(proposalId) && isAdmin();
+    }
+
+    match /notifications/{notifId} {
+      allow get: if isSignedIn() && isValidId(notifId) && (
+        isAdmin() ||
+        resource.data.recipientUid == request.auth.uid ||
+        (isStaff() && resource.data.targetRole == 'STAFF')
+      );
+      allow list: if isSignedIn() && (
+        isAdmin() ||
+        resource.data.recipientUid == request.auth.uid ||
+        (isStaff() && resource.data.targetRole == 'STAFF')
+      );
+
+      allow create: if isSignedIn() &&
+        isValidId(notifId) &&
+        isValidNotification(incoming()) &&
+        (isStaffOrAdmin() || incoming().recipientUid == request.auth.uid) &&
+        incoming().keys().hasAll([
+          'title', 'message', 'targetRole', 'severity', 'read', 'timestamp',
+          'recipientUid', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'title', 'message', 'targetRole', 'centreId', 'counterId', 'severity',
+          'read', 'timestamp', 'relatedTokenNumber', 'recipientUid', 'createdAt', 'updatedAt'
+        ]);
+
+      allow update: if isSignedIn() &&
+        isValidId(notifId) &&
+        isValidNotification(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isAdmin() ||
+          resource.data.recipientUid == request.auth.uid ||
+          (isStaff() && resource.data.targetRole == 'STAFF')
+        ) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['read', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(notifId) && isAdmin();
+    }
+
+    match /system_settings/{settingId} {
+      allow get: if isSignedIn() && isValidId(settingId) && (resource.data.visibility == 'PUBLIC' || isAdmin());
+      allow list: if isSignedIn() && resource.data.visibility == 'PUBLIC';
+
+      allow create: if isSignedIn() &&
+        isValidId(settingId) &&
+        isValidSystemSettings(incoming()) &&
+        isAdmin() &&
+        incoming().keys().hasAll([
+          'autoNoShowTimeoutMinutes', 'maxActiveTokensPerCitizen', 'crowdDecayHalfLifeMinutes',
+          'walkInBufferPerHour', 'maintenanceMode', 'maintenanceBanner', 'updatedAtMillis',
+          'updatedByAdmin', 'visibility', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'autoNoShowTimeoutMinutes', 'maxActiveTokensPerCitizen', 'crowdDecayHalfLifeMinutes',
+          'walkInBufferPerHour', 'maintenanceMode', 'maintenanceBanner', 'updatedAtMillis',
+          'updatedByAdmin', 'visibility', 'createdAt', 'updatedAt'
+        ]);
+
+      allow update: if isSignedIn() &&
+        isValidId(settingId) &&
+        isValidSystemSettings(incoming()) &&
+        isAdmin() &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'autoNoShowTimeoutMinutes', 'maxActiveTokensPerCitizen', 'crowdDecayHalfLifeMinutes',
+          'walkInBufferPerHour', 'maintenanceMode', 'maintenanceBanner', 'updatedAtMillis',
+          'updatedByAdmin', 'updatedAt'
+        ]);
+
+      allow delete: if isSignedIn() && isValidId(settingId) && isAdmin();
+    }
+
+    match /crowd_reports/{reportId} {
+      allow get: if isSignedIn() && isValidId(reportId) && resource.data.visibility == 'PUBLIC';
+      allow list: if isSignedIn() && resource.data.visibility == 'PUBLIC';
+
+      allow create: if isSignedIn() &&
+        isValidId(reportId) &&
+        isValidCrowdReport(incoming()) &&
+        incoming().userId == request.auth.uid &&
+        incoming().staffVerified == false &&
+        incoming().keys().hasAll([
+          'userId', 'centreId', 'centreName', 'crowdLevel', 'approxPeopleCount',
+          'reportedWaitMinutes', 'notes', 'reporterName', 'timestamp', 'upvotesCount',
+          'staffVerified', 'confidenceScore', 'visibility', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'userId', 'centreId', 'centreName', 'crowdLevel', 'approxPeopleCount',
+          'reportedWaitMinutes', 'notes', 'reporterName', 'timestamp', 'upvotesCount',
+          'staffVerified', 'confidenceScore', 'visibility', 'createdAt', 'updatedAt'
+        ]) &&
+        exists(/databases/$(database)/documents/centres/$(incoming().centreId));
+
+      allow update: if isSignedIn() &&
+        isValidId(reportId) &&
+        isValidCrowdReport(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isAdmin() ||
+          (isStaff() && incoming().diff(existing()).affectedKeys().hasOnly(['staffVerified', 'confidenceScore', 'updatedAt'])) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['upvotesCount', 'updatedAt'])
+        );
+
+      allow delete: if isSignedIn() && isValidId(reportId) && (isAdmin() || resource.data.userId == request.auth.uid);
+    }
+
+    match /reviews/{reviewId} {
+      allow get: if isSignedIn() && isValidId(reviewId) && resource.data.visibility == 'PUBLIC';
+      allow list: if isSignedIn() && resource.data.visibility == 'PUBLIC';
+
+      allow create: if isSignedIn() &&
+        isValidId(reviewId) &&
+        isValidReview(incoming()) &&
+        incoming().userId == request.auth.uid &&
+        incoming().keys().hasAll([
+          'userId', 'centreId', 'centreName', 'userName', 'rating', 'reviewText',
+          'visitTag', 'queueSpeedRating', 'timestamp', 'helpfulCount', 'verifiedVisitor',
+          'visibility', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'userId', 'centreId', 'centreName', 'userName', 'rating', 'reviewText',
+          'visitTag', 'queueSpeedRating', 'timestamp', 'helpfulCount', 'verifiedVisitor',
+          'visibility', 'createdAt', 'updatedAt'
+        ]) &&
+        exists(/databases/$(database)/documents/centres/$(incoming().centreId));
+
+      allow update: if isSignedIn() &&
+        isValidId(reviewId) &&
+        isValidReview(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['helpfulCount', 'updatedAt']) ||
+          (existing().userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['rating', 'reviewText', 'updatedAt']))
+        );
+
+      allow delete: if isSignedIn() && isValidId(reviewId) && (isAdmin() || resource.data.userId == request.auth.uid);
+    }
+
+    match /live_queue_updates/{updateId} {
+      allow get: if isSignedIn() && isValidId(updateId) && resource.data.visibility == 'PUBLIC';
+      allow list: if isSignedIn() && resource.data.visibility == 'PUBLIC';
+
+      allow create: if isSignedIn() &&
+        isValidId(updateId) &&
+        isValidLiveUpdate(incoming()) &&
+        incoming().userId == request.auth.uid &&
+        incoming().keys().hasAll([
+          'userId', 'centreId', 'centreName', 'reporterName', 'updateTag', 'message',
+          'timestamp', 'currentServingEstimate', 'upvotes', 'visibility', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'userId', 'centreId', 'centreName', 'reporterName', 'updateTag', 'message',
+          'timestamp', 'currentServingEstimate', 'upvotes', 'visibility', 'createdAt', 'updatedAt'
+        ]) &&
+        exists(/databases/$(database)/documents/centres/$(incoming().centreId));
+
+      allow update: if isSignedIn() &&
+        isValidId(updateId) &&
+        isValidLiveUpdate(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isAdmin() ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['upvotes', 'updatedAt'])
+        );
+
+      allow delete: if isSignedIn() && isValidId(updateId) && (isAdmin() || resource.data.userId == request.auth.uid);
+    }
+
+    match /audit_logs/{logId} {
+      allow get: if isSignedIn() && isValidId(logId) && (isAdmin() || resource.data.actorUid == request.auth.uid);
+      allow list: if isSignedIn() && (isAdmin() || resource.data.actorUid == request.auth.uid);
+
+      allow create: if isSignedIn() &&
+        isValidId(logId) &&
+        isValidAuditLog(incoming()) &&
+        incoming().actorUid == request.auth.uid &&
+        incoming().keys().hasAll([
+          'timestamp', 'action', 'actorName', 'actorRole', 'actorUid', 'details', 'createdAt'
+        ]) &&
+        incoming().keys().hasOnly([
+          'timestamp', 'action', 'actorName', 'actorRole', 'actorUid', 'details', 'centreId', 'createdAt'
+        ]);
+
+      allow update, delete: if false;
+    }
+  }
+}

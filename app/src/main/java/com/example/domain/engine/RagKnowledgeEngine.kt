@@ -107,24 +107,174 @@ object RagKnowledgeEngine {
 
     fun generateGroundedAnswer(query: String, retrievedDocs: List<KnowledgeDocument>): String {
         if (retrievedDocs.isEmpty()) {
-            return "Verified information for your exact request was not found in the official QEase service directory. Please check directly with the respective centre desk or search by service category."
+            return "Verified information for your exact request was not found in the official QEase service directory.\n\nPlease check directly with the respective centre desk or browse by service category."
         }
 
         val primary = retrievedDocs.first()
-        val docList = if (primary.content.contains("Required Documents:")) {
-            primary.content.substringAfter("Required Documents:").substringBefore("2. Official").trim()
-        } else {
-            "Please check the official checklist on the service detail page."
+        val lines = primary.content.lines()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .drop(1) // Drop intro title line since we show the official header below
+
+        val formattedBody = lines.joinToString("\n") { line ->
+            val cleaned = line.replace(Regex("^\\d+\\.\\s*"), "")
+            when {
+                cleaned.startsWith("-") -> cleaned
+                cleaned.contains(":") -> cleaned
+                else -> "- $cleaned"
+            }
         }
 
-        return """
-            Here is the verified information from **${primary.officialAuthority}** (${primary.title}):
+        return buildString {
+            appendLine("## ${primary.title}")
+            appendLine("Authority: ${primary.officialAuthority}")
+            appendLine()
+            appendLine(formattedBody)
+            appendLine()
+            append("QEase Tip: Join the live virtual queue on QEase to track active counters and receive turn alerts before arriving.")
+        }.trim()
+    }
 
-            📋 **Key Requirements:**
-            ${docList.take(300)}...
+    fun generateStaffCopilotAnswer(
+        query: String,
+        retrievedDocs: List<KnowledgeDocument>,
+        centreName: String,
+        counterNumber: Int,
+        waitingCount: Int,
+        pendingProposalsCount: Int,
+        unverifiedReportsCount: Int,
+        primaryServiceTitle: String,
+        primaryServiceFee: String,
+        primaryServiceDuration: Int
+    ): String {
+        val q = query.lowercase()
+        return buildString {
+            when {
+                q.contains("doc") || q.contains("checklist") || q.contains("proof") || q.contains("alternative") -> {
+                    appendLine("## Document Rule & Proposal Draft")
+                    appendLine("Desk Scope: $centreName • Counter $counterNumber")
+                    appendLine("Target Service: $primaryServiceTitle")
+                    appendLine()
+                    appendLine("Findings:")
+                    appendLine("- Field intake shows address proof and medical Form 1-A verification frequently stall counter throughput.")
+                    appendLine("- Document edits submitted from Staff Proposals are held safely for Admin approval before publishing to citizens.")
+                    appendLine()
+                    append("Recommended Action: Use the button below to prefill a Required Document proposal for $primaryServiceTitle with clear alternative proof guidance.")
+                }
+                q.contains("crowd") || q.contains("verify") || q.contains("report") || q.contains("alert") -> {
+                    appendLine("## Live Desk Crowd & Alert Summary")
+                    appendLine("Desk Scope: $centreName • Counter $counterNumber")
+                    appendLine()
+                    appendLine("Live Telemetry:")
+                    appendLine("- Citizens Waiting in Queue: $waitingCount")
+                    appendLine("- Unverified Field Crowd Reports: $unverifiedReportsCount")
+                    appendLine("- Your Pending Proposals: $pendingProposalsCount")
+                    appendLine()
+                    append("Recommended Action: Verifying field crowd reports locks centre confidence to 100% and calibrates citizen wait estimates immediately.")
+                }
+                q.contains("propos") || q.contains("fee") || q.contains("duration") || q.contains("caution") || q.contains("delay") || q.contains("update") -> {
+                    val suggestedDuration = (primaryServiceDuration - 2).coerceAtLeast(5)
+                    appendLine("## Service Info Proposal Draft")
+                    appendLine("Target Service: $primaryServiceTitle")
+                    appendLine("Current Official Spec: $primaryServiceFee • $primaryServiceDuration mins")
+                    appendLine()
+                    appendLine("Suggested Update:")
+                    appendLine("- Proposed Duration: $suggestedDuration mins (calibrated to current counter speed)")
+                    appendLine("- Counter Caution: Carry original ID & self-attested copies to prevent hold at Counter $counterNumber.")
+                    appendLine("- Waiting Queue Impact: $waitingCount citizens currently waiting at $centreName.")
+                    appendLine()
+                    append("Recommended Action: Tap Prefill Service Info Proposal below to review and submit directly to Admin Approvals.")
+                }
+                retrievedDocs.isNotEmpty() -> {
+                    val doc = retrievedDocs.first()
+                    appendLine("## Counter SOP Reference: ${doc.title}")
+                    appendLine("Desk Scope: $centreName • Counter $counterNumber")
+                    appendLine("Authority: ${doc.officialAuthority}")
+                    appendLine()
+                    doc.content.lines().map { it.trim() }.filter { it.isNotBlank() }.drop(1).forEach { line ->
+                        appendLine("- ${line.replace(Regex("^\\d+\\.\\s*"), "")}")
+                    }
+                    appendLine()
+                    append("Queue Context: $waitingCount waiting tokens at $centreName. Propose any checklist clarifications via Proposals.")
+                }
+                else -> {
+                    appendLine("## Counter Desk AI Copilot")
+                    appendLine("Assigned Desk: $centreName • Counter $counterNumber")
+                    appendLine()
+                    appendLine("Current Snapshot:")
+                    appendLine("- Active Waiting Queue: $waitingCount citizens")
+                    appendLine("- Pending Proposals Awaiting Admin: $pendingProposalsCount")
+                    appendLine("- Unverified Crowd Reports: $unverifiedReportsCount")
+                    appendLine()
+                    append("Ask me to draft a Service Info or Required Document proposal, summarize queue load, or check counter SOP documents.")
+                }
+            }
+        }.trim()
+    }
 
-            💡 **QEase Recommendation:**
-            You can join the live virtual queue on QEase to receive turn alerts and track people ahead before visiting.
-        """.trimIndent()
+    fun generateAdminAuditAnswer(
+        query: String,
+        pendingProposalsSummary: List<String>,
+        bottleneckSummary: List<String>,
+        statsWaiting: Int,
+        activeCounters: Int,
+        totalCounters: Int,
+        maintenanceMode: Boolean,
+        recentAuditSummary: List<String>
+    ): String {
+        val q = query.lowercase()
+        return buildString {
+            when {
+                q.contains("propos") || q.contains("approv") || q.contains("review") || q.contains("risk") -> {
+                    appendLine("## Pending Proposal Governance Audit")
+                    appendLine("Queue Governance Scope: ${pendingProposalsSummary.size} pending proposals awaiting sign-off")
+                    appendLine()
+                    if (pendingProposalsSummary.isEmpty()) {
+                        appendLine("Status: All submitted Staff edits have been reviewed and resolved.")
+                    } else {
+                        appendLine("Items Requiring Review:")
+                        pendingProposalsSummary.forEach { appendLine("- $it") }
+                    }
+                    appendLine()
+                    append("Audit Guidance: Verify fee changes and mandatory document removals against official circulars before publishing live to citizens.")
+                }
+                q.contains("bottleneck") || q.contains("wait") || q.contains("load") || q.contains("centre") || q.contains("center") -> {
+                    appendLine("## Cross-Centre Bottleneck Analysis")
+                    appendLine("Network Snapshot: $statsWaiting citizens waiting • $activeCounters/$totalCounters counters active")
+                    appendLine()
+                    appendLine("Load Breakdown:")
+                    bottleneckSummary.forEach { appendLine("- $it") }
+                    appendLine()
+                    append("Recommended Action: Open idle counters or adjust citizen walk-in buffers on high-wait facilities via Ops or Monitor.")
+                }
+                q.contains("maint") || q.contains("policy") || q.contains("setting") || q.contains("staff") -> {
+                    appendLine("## Policy & Operations Audit")
+                    appendLine("Global Maintenance Mode: ${if (maintenanceMode) "ACTIVE (Bookings Paused)" else "OFF (Normal Intake)"}")
+                    appendLine("Active Desks: $activeCounters / $totalCounters counters online")
+                    appendLine()
+                    if (recentAuditSummary.isNotEmpty()) {
+                        appendLine("Latest Audit Trail:")
+                        recentAuditSummary.take(4).forEach { appendLine("- $it") }
+                    }
+                    appendLine()
+                    append("Recommended Action: Review grace timeout, token caps, or officer counter locks inside the Ops console.")
+                }
+                else -> {
+                    appendLine("## Executive Governance & Audit Summary")
+                    appendLine("System State: $statsWaiting waiting citizens • $activeCounters/$totalCounters counters • ${pendingProposalsSummary.size} pending approvals")
+                    appendLine("Maintenance Mode: ${if (maintenanceMode) "ACTIVE" else "INACTIVE"}")
+                    appendLine()
+                    if (bottleneckSummary.isNotEmpty()) {
+                        appendLine("Centre Load Highlights:")
+                        bottleneckSummary.take(3).forEach { appendLine("- $it") }
+                    }
+                    if (recentAuditSummary.isNotEmpty()) {
+                        appendLine()
+                        appendLine("Recent Audit Events:")
+                        recentAuditSummary.take(3).forEach { appendLine("- $it") }
+                    }
+                }
+            }
+        }.trim()
     }
 }
